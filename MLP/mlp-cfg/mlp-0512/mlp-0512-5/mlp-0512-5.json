@@ -1,0 +1,16 @@
+{
+  "in_features": 10,
+  "layers": [
+    {"class": "Linear", "out_features": 512},
+    {"class": "ReLU"},
+    {"class": "Linear", "out_features": 512},
+    {"class": "ReLU"},
+    {"class": "Linear", "out_features": 512},
+    {"class": "ReLU"},
+    {"class": "Linear", "out_features": 512},
+    {"class": "ReLU"},
+    {"class": "Linear", "out_features": 512},
+    {"class": "ReLU"},
+    {"class": "Linear", "out_features": 1}
+  ]
+}

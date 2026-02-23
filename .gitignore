@@ -1,0 +1,20 @@
+# Python virtual environment
+p3-env/
+
+# Numpy
+*.npy
+
+# JSON
+npy-to-cfg.json
+
+# Data visualization
+*.png
+*.pdf
+
+# CSV
+*-losses.csv
+*-tstmse.csv
+*-runtime.csv
+
+# Serialized PyTorch models
+#*.pt
