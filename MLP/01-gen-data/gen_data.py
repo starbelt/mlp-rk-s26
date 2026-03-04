@@ -227,11 +227,4 @@ for cap_id in tqdm(range(n), desc="Generating Data"):
 # write a JSON configuration key
 with open(os.path.join(log,'npy-to-cfg.json'), 'w') as ofile:
   json.dump(id_to_cfg,ofile)
-
-file_path = '../../RK/RK_CONFIGS.csv'
-with open(file_path, mode='w', newline='') as file:
-    writer = csv.writer(file)
-    writer.writerow(params)
-    for cap_id in range(n):
-        writer.writerow(super_cap + [meta["dur_s"][cap_id], meta["dt_s"][cap_id]])
     
