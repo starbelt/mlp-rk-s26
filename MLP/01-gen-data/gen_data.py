@@ -157,10 +157,10 @@ pad = max(1, math.floor(math.log10(n)) + 1)
 
 for k in meta:
     meta[k] = meta[k][:n]
+    max_dur_s = max(meta["dur_s"])
+    max_points = int(max_dur_s/dt_s_avg)
 
-max_dur_s = max(meta["dur_s"])
-max_points = int(max_dur_s/dt_s_avg)
-#print(max_points)
+    #print(max_points)
 
 # Ensures the same number of points per data set
 for i in range(len(meta["dt_s"])):
@@ -227,3 +227,11 @@ for cap_id in tqdm(range(n), desc="Generating Data"):
 # write a JSON configuration key
 with open(os.path.join(log,'npy-to-cfg.json'), 'w') as ofile:
   json.dump(id_to_cfg,ofile)
+
+file_path = '../../RK/RK_CONFIGS.csv'
+with open(file_path, mode='w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(params)
+    for cap_id in range(n):
+        writer.writerow(super_cap + [meta["dur_s"][cap_id], meta["dt_s"][cap_id]])
+    

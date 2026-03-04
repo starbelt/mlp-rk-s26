@@ -18,3 +18,5 @@ npy-to-cfg.json
 
 # Serialized PyTorch models
 #*.pt
+
+*.csv
