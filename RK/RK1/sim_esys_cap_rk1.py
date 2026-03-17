@@ -5,16 +5,17 @@
 #
 # Writes:
 #   outputs/rk1/r01/
-#     log-node-v.csv      (FULL)
-#     log-buff-v.csv      (FULL)
-#     log-states.csv
-#     meta.csv
-#     opcount.csv
-#     voltages_rk1.pdf    (downsampled visualization only)
+#     log-node-v.npy
+#     log-buff-v.npy
+#     log-states.npy
+#     meta.npy
+#     step-times.csv
+#     voltages_rk1.pdf
 # ------------------------------------------------------------
 
 import os, csv, math, time, argparse
 import matplotlib.pyplot as plt
+import numpy as np
 
 IRR_W_P_M2 = 1366.1
 PLOT_DOWNSAMPLE = 3  # ONLY for PDF visualization; CSV stays full.
@@ -61,36 +62,34 @@ def parse_row(r):
     )
 
 
-# ---------------- Operation count ----------------
-def write_opcount_csv(path, dt_s, dur_s, steps, opcounts):
-    with open(path, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow([
-            "method","dt_s","dur_s","steps",
-            "add","mul","div","sqrt","comp",
-        ])
-        w.writerow([
-            "rk1", f"{dt_s:.12g}", f"{dur_s:.12g}", int(steps),
-            int(opcounts["add"]), int(opcounts["mul"]), int(opcounts["div"]),
-            int(opcounts["sqrt"]), int(opcounts["comp"]),
-        ])
+# ---------------- Step timing CSV ----------------
+def write_step_times_csv(path, step_timing_log):
+    with open(path, mode="w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["t_s", "cumulative_step_time_sec"])
+        for t_s, cumulative_step_time_s in step_timing_log:
+            writer.writerow([f"{t_s:.12e}", f"{cumulative_step_time_s:.12e}"])
 
 
 # ---------------- Simulation (RK1 / Euler) ----------------
 def run_rk1(params, timing_only: bool = False):
-    sa_m2=params["sa_m2"]; eff=params["eff"]; vmp=params["vmp"]
-    c_f=params["c_f"]; esr_ohm=params["esr_ohm"]; q0_c=params["q0_c"]
-    p_on_w=params["p_on_w"]; vhi=params["vhi"]; vlo=params["vlo"]
-    dt_s=params["dt_s"]; dur_s=params["dur_s"]
-
-    # ---- opcount counters (runtime counting) ----
-    op = dict(add=0, mul=0, div=0, sqrt=0, comp=0)
+    sa_m2 = params["sa_m2"]
+    eff = params["eff"]
+    vmp = params["vmp"]
+    c_f = params["c_f"]
+    esr_ohm = params["esr_ohm"]
+    q0_c = params["q0_c"]
+    p_on_w = params["p_on_w"]
+    vhi = params["vhi"]
+    vlo = params["vlo"]
+    dt_s = params["dt_s"]
+    dur_s = params["dur_s"]
 
     # ---- initial conditions ----
-    t_s   = 0.0
+    t_s = 0.0
     imp_a = calc_solar_current(IRR_W_P_M2, sa_m2, eff, vmp)
-    i1_a  = imp_a
-    qt_c  = q0_c
+    i1_a = imp_a
+    qt_c = q0_c
     p_mode_w = 0.0  # OFF initially
 
     node_discr = calc_node_discr(qt_c, c_f, i1_a, esr_ohm, p_mode_w)
@@ -109,14 +108,13 @@ def run_rk1(params, timing_only: bool = False):
         p_mode_w = 0.0
 
     # ---- logs ----
-    # Keep state log always for cycle timing.
     log_states = [[t_s, "OFF"]]
-
-    # Voltage logs:
-    # - timing_only=True : do NOT grow these lists every step
-    # - timing_only=False: full logs
     log_node_v = [[t_s, node_v]]
     log_buff_v = [[t_s, qt_c / c_f]]
+
+    # cumulative timestep timing log
+    step_timing_log = []
+    cumulative_step_time_s = 0.0
 
     # Timing instrumentation
     time_on_accum = 0.0
@@ -125,75 +123,55 @@ def run_rk1(params, timing_only: bool = False):
 
     # ---- Simulation loop: Euler method (RK1) ----
     while t_s < dur_s:
+        # start timing this timestep
+        step_start = time.perf_counter()
+
         t_s += dt_s
         n_steps += 1
 
         # ---- RK1 integration: compute charge update ----
         # Stage 1: Calculate load current from previous step's node voltage
         i3_a = 0.0
-        op["comp"] += 2
         if node_v > 0.0 and p_mode_w > 0.0:
-            op["div"] += 1
             i3_a = p_mode_w / node_v
 
         # Stage 1 slope: k1 = i1 - i3
-        op["add"] += 1
         k1 = i1_a - i3_a
 
         # Update charge: qt = qt + dt*k1
-        op["mul"] += 1; op["add"] += 1
         qt_c += dt_s * k1
-        op["comp"] += 1
         if qt_c < 0.0:
             qt_c = 0.0
 
         # ---- END-OF-STEP: Update system state after charge integration ----
         # Step 1: Calculate nominal solar current (before Vmp clamping)
-        op["comp"] += 1
-        if vmp > 0.0:
-            op["mul"] += 2; op["div"] += 1
         i1_nom = calc_solar_current(IRR_W_P_M2, sa_m2, eff, vmp)
 
         # Step 2: Compute final node voltage with nominal current and current load power
-        op["div"] += 1; op["mul"] += 1; op["add"] += 1
-        op["mul"] += 1; op["mul"] += 2; op["add"] += 1
         disc = calc_node_discr(qt_c, c_f, i1_nom, esr_ohm, p_mode_w)
 
-        op["comp"] += 1
         if disc < 0.0:
             p_mode_w = 0.0
             log_states.append([t_s, "power too high"])
-            op["div"] += 1; op["mul"] += 1; op["add"] += 1
-            op["mul"] += 1; op["mul"] += 2; op["add"] += 1
             disc = calc_node_discr(qt_c, c_f, i1_nom, esr_ohm, p_mode_w)
 
-        op["div"] += 1; op["mul"] += 1; op["add"] += 2; op["sqrt"] += 1; op["mul"] += 1
         node_v = calc_node_voltage(disc, qt_c, c_f, i1_nom, esr_ohm)
 
         # Step 3: Apply threshold logic (VHI/VLO) - only checked at end of step
-        op["comp"] += 1
         if p_mode_w == 0.0:
-            op["comp"] += 1
             if node_v >= vhi:
                 p_mode_w = p_on_w
                 log_states.append([t_s, "VHI"])
-                op["div"] += 1; op["mul"] += 1; op["add"] += 1
-                op["mul"] += 1; op["mul"] += 2; op["add"] += 1
                 disc_check = calc_node_discr(qt_c, c_f, i1_nom, esr_ohm, p_mode_w)
-                op["comp"] += 1
                 if disc_check < 0.0:
                     p_mode_w = 0.0
                     log_states.append([t_s, "power too high"])
 
         # Step 4: Apply Vmp clamping
-        op["comp"] += 2
         if vmp <= node_v and i1_nom > 0.0:
             i1_a = 0.0
             log_states.append([t_s, "node voltage too high"])
-            op["div"] += 1; op["mul"] += 1; op["add"] += 1
-            op["mul"] += 1; op["mul"] += 2; op["add"] += 1
             disc_check = calc_node_discr(qt_c, c_f, i1_a, esr_ohm, p_mode_w)
-            op["comp"] += 1
             if disc_check < 0.0:
                 p_mode_w = 0.0
                 log_states.append([t_s, "power too high"])
@@ -201,23 +179,25 @@ def run_rk1(params, timing_only: bool = False):
             i1_a = i1_nom
 
         # Step 5: Apply VLO threshold
-        op["comp"] += 1
         if p_mode_w > 0.0:
-            op["comp"] += 1
             if node_v <= vlo:
                 p_mode_w = 0.0
                 log_states.append([t_s, "VLO"])
 
         # duty
-        op["comp"] += 1
         if p_mode_w > 0.0:
-            op["add"] += 1
             time_on_accum += dt_s
 
         # Voltage logs (ONLY when not timing_only)
         if not timing_only:
             log_node_v.append([t_s, node_v])
             log_buff_v.append([t_s, qt_c / c_f])
+
+        # end timing this timestep
+        step_end = time.perf_counter()
+        step_time_s = step_end - step_start
+        cumulative_step_time_s += step_time_s
+        step_timing_log.append([t_s, cumulative_step_time_s])
 
     # End timing
     exec_time_total_s = time.perf_counter() - t_start
@@ -242,7 +222,7 @@ def run_rk1(params, timing_only: bool = False):
         exec_time_per_step_s,
         n_steps,
         duty_cycle_percent,
-        op,
+        step_timing_log,
     )
 
 
@@ -250,41 +230,28 @@ def run_rk1(params, timing_only: bool = False):
 def write_outputs(out_dir, log_node_v, log_buff_v, log_states, meta_dict, params):
     os.makedirs(out_dir, exist_ok=True)
 
-    node_csv = os.path.join(out_dir, "log-node-v.csv")
-    buff_csv = os.path.join(out_dir, "log-buff-v.csv")
+    node_npy = os.path.join(out_dir, "log-node-v.npy")
+    buff_npy = os.path.join(out_dir, "log-buff-v.npy")
+    states_npy = os.path.join(out_dir, "log-states.npy")
+    meta_npy = os.path.join(out_dir, "meta.npy")
 
-    # FULL CSV (no downsample)
-    with open(node_csv, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["t_s", "Node Voltage (V)"])
-        for t, v in log_node_v:
-            w.writerow([f"{t:.9f}", f"{v:.9f}"])
+    np.save(node_npy, np.asarray(log_node_v, dtype=np.float64))
+    np.save(buff_npy, np.asarray(log_buff_v, dtype=np.float64))
 
-    with open(buff_csv, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["t_s", "Buffer Voltage (V)"])
-        for t, v in log_buff_v:
-            w.writerow([f"{t:.9f}", f"{v:.9f}"])
+    states_arr = np.array(
+        [(float(t), str(s)) for t, s in log_states],
+        dtype=[("t_s", "f8"), ("state", "U32")]
+    )
+    np.save(states_npy, states_arr)
 
-    with open(os.path.join(out_dir, "log-states.csv"), "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["t_s", "state"])
-        for t, s in log_states:
-            w.writerow([f"{t:.9f}", s])
+    np.save(meta_npy, meta_dict)
 
-    with open(os.path.join(out_dir, "meta.csv"), "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["key","value"])
-        for k, v in meta_dict.items():
-            w.writerow([k, v])
-
-    # PDF (downsample)
     dn = max(int(PLOT_DOWNSAMPLE), 1)
     node_ds = log_node_v[::dn]
     buff_ds = log_buff_v[::dn]
-    t_plot  = [e[0] for e in node_ds]
-    node_v  = [e[1] for e in node_ds]
-    buff_v  = [e[1] for e in buff_ds]
+    t_plot = [e[0] for e in node_ds]
+    node_v = [e[1] for e in node_ds]
+    buff_v = [e[1] for e in buff_ds]
 
     param_text = (
         f"sa_m2={params['sa_m2']:.4g}, eff={params['eff']:.3g}, vmp={params['vmp']:.3g}, "
@@ -313,11 +280,9 @@ def main():
     ap.add_argument("--row_idx", type=int, default=0)
     ap.add_argument("--out_base", type=str, default="RK1")
 
-
-    # NEW: optional override for dt_s
     ap.add_argument("--dt_s", type=float, default=None,
                     help="Override dt_s from CSV (seconds). If omitted, uses CSV dt_s.")
-    
+
     args = ap.parse_args()
 
     rows = read_rows(args.input)
@@ -326,7 +291,6 @@ def main():
 
     params = parse_row(rows[args.row_idx])
 
-    # NEW: apply override (no other behavior changes)
     if args.dt_s is not None:
         if args.dt_s <= 0.0:
             raise ValueError(f"--dt_s must be > 0, got {args.dt_s}")
@@ -335,31 +299,25 @@ def main():
     rtag = f"r{args.row_idx+1:02d}"
     out_dir = os.path.join(args.out_base, rtag)
 
-    node, buff, states, exec_total_s, exec_per_step_s, n_steps, duty_pct, op = run_rk1(params)
+    node, buff, states, exec_total_s, exec_per_step_s, n_steps, duty_pct, step_timing_log = run_rk1(params)
 
     meta = {
         "method": "rk1",
         "row_idx": str(args.row_idx),
         "input_csv": args.input,
-
         "dt_s": f"{params['dt_s']:.12g}",
         "dur_s": f"{params['dur_s']:.12g}",
         "n_steps": str(n_steps),
-
         "exec_time_total_s": f"{exec_total_s:.9f}",
         "exec_time_per_step_s": f"{exec_per_step_s:.12e}",
-
         "duty_cycle_percent": f"{duty_pct:.6f}",
     }
 
     write_outputs(out_dir, node, buff, states, meta, params)
 
-    # --- opcount.csv ---
-    write_opcount_csv(
-        os.path.join(out_dir, "opcount.csv"),
-        params["dt_s"], params["dur_s"],
-        n_steps,
-        op,
+    write_step_times_csv(
+        os.path.join(out_dir, "step-times.csv"),
+        step_timing_log,
     )
 
     print(f"Saved: {out_dir}")

@@ -1,4 +1,4 @@
-# viz_mlp.py
+# mlpa.py - mlp accuracy
 #
 # Usage: python3 viz_mlp.py /path/to/mlp-cfg.json /path/to/mlp.pt /path/to/src/ /path/to/dst/
 #  Generates MLP defined by mlp-cfg.json, loads weights from mlp.pt, reads all
@@ -20,6 +20,8 @@ import sys                      # argv
 import torch                    # PyTorch
 import torch.nn as nn           # Sequential, Linear, ReLU
 import math as math
+import pandas as pd            # pandas
+
 
 # "constants"
 ## None
@@ -48,6 +50,7 @@ def mlp_from_json(json_dict):
 # initialize script arguments
 cfg = '' # a JSON specification of an MLP
 pth = '' # a PyTorch model weights file
+norm_pth = '' # a PyTorch model weights file for normalization stats
 src = '' # a directory containing NPY files
 dst = '' # a directory for writing PNG files
 
@@ -61,7 +64,7 @@ if len(sys.argv)==6:
 else:
   print(\
    'Usage: '\
-   'python3 viz_mlp.py /path/to/mlp-cfg.json /path/to/mlp.pt /path/to/mlp-norm.pt /path/to/src/ /path/to/dst/'\
+   'python3 mlpa.py /path/to/mlp-cfg.json /path/to/mlp.pt /path/to/mlp-norm.pt /path/to/src/ /path/to/dst/'\
   )
   exit()
 
@@ -126,7 +129,7 @@ for npy in npys:
 
   inputs_norm = (inputs - t_mean) / t_std
 
-  arr = np.load(f"../03-split-data/tst/{npy}")
+  arr = np.load(f"../MLP/03-split-data/tst/{npy}")
 
   time_tst = arr[:, 0]
   #voltage_trn = arr[:, 1]
@@ -154,39 +157,12 @@ for npy in npys:
 
   print(f"{cap_id}: RMSE={rmse:.6f}, MAE={mae:.6f}, MaxErr={max_err:.6f}")
 
-  plt_title = \
-   'Surface Area: '+'{:.3f}'.format(npy_to_cfg_dict[cap_id]['surface area'])+'; '+\
-   'Capacitance: '+'{:.3f}'.format(npy_to_cfg_dict[cap_id]['capacitance'])+'; '+\
-   'ESR: '+'{:.3f}'.format(npy_to_cfg_dict[cap_id]['equivalent series resistance'])+'; '+\
-   'Power: '+'{:.3f}'.format(npy_to_cfg_dict[cap_id]['power'])
-  plt_y_axis = 'Voltage (V)'
-  plt_x_axis = 'Time (s)'
+  df = pd.DataFrame({
+    "time_s": time_pred,
+    "abs_err": abs_err
+  })
 
-# Assign colors point-by-point
-  fig = plt.figure(layout='constrained')
-  plt.plot(\
-   nparr[:,0], nparr[:,1],\
-   marker='o', linestyle='None', label='Truth'\
-  )
-  #pred_np = pred_out.detach().cpu().numpy().squeeze()  # shape (N,)
-  
-  plt.plot(
-   nparr[:,0], pred_np,
-   marker='.', linestyle='None', label='Predictions'
-  )
+  np.save(os.path.join(dst, f"{cap_id}_error.npy"), df[["time_s", "abs_err"]].to_numpy())
 
-  plt.title(plt_title)
-  plt.ylabel(plt_y_axis)
-  plt.xlabel(plt_x_axis)
-  plt.legend()
-  plt.savefig(os.path.join(dst,cap_id+'.png'),format='png')
-  plt.close(fig)
 
-  fig = plt.figure(layout='constrained')
-  plt.plot(time_pred, abs_err, marker='.', linestyle='None', label='|Error|')
-  plt.title(plt_title + ' (Error)')
-  plt.ylabel('Absolute Error (V)')
-  plt.xlabel('Time (s)')
-  plt.legend()
-  plt.savefig(os.path.join(dst, cap_id + '_err.png'), format='png')
-  plt.close(fig)
+
