@@ -106,7 +106,7 @@ mlp_parent = os.path.basename((os.path.dirname(cfg_path)))
 dst = f"./{mlp_parent}-results"
 os.makedirs(dst, exist_ok=True)
 
-print(f"Saving plots to: {dst}")
+print(f"Saving data to: {dst}")
 
 # load data and write plot PNGs
 for npy in npys:
@@ -129,7 +129,7 @@ for npy in npys:
 
   inputs_norm = (inputs - t_mean) / t_std
 
-  arr = np.load(f"../MLP/03-split-data/tst/{npy}")
+  arr = np.load(f"../../MLP/03-split-data/tst/{npy}")
 
   time_tst = arr[:, 0]
   #voltage_trn = arr[:, 1]
