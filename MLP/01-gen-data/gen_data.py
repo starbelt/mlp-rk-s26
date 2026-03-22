@@ -165,7 +165,7 @@ for k in meta:
 # Ensures the same number of points per data set
 for i in range(len(meta["dt_s"])):
     meta["dt_s"][i] = meta["dur_s"][i]/max_points
-    #print(meta["dur_s"][i]/meta["dt_s"][i])
+    #print(meta["dt_s"][i])
 
 # for each wave, write out a dataset 
 id_to_cfg = {}

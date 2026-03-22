@@ -1,6 +1,6 @@
 #!/bin/bash
 
-file="rk_configs.csv"
+file="../01-gen-rk-data/rk_configs.csv"
 
 # number of rows excluding header
 num_rows=$(($(wc -l < "$file") - 1))

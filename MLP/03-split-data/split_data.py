@@ -18,9 +18,9 @@ import sys         # argv
 # "constants"
 
 ## train, validate, and test split (must add to 1.0)
-TRN_FRAC = 0.0
-VAL_FRAC = 0.0
-TST_FRAC = 1.0 # calculated as 1.0-(TRN_FRAC+VAL_FRAC)
+TRN_FRAC = 0.6
+VAL_FRAC = 0.2
+#TST_FRAC = 0.2 # calculated as 1.0-(TRN_FRAC+VAL_FRAC)
 
 # helper functions
 ## None

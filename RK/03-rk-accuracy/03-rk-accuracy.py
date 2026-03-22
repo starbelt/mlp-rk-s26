@@ -1,16 +1,20 @@
 import numpy as np
 import os
 import pandas as pd
+import shutil
+
+if os.path.exists("outputs"):
+    shutil.rmtree("outputs")
 
 os.makedirs("outputs", exist_ok=True)
 
 # Read CSV WITH header row
-cfg = pd.read_csv("./rk_configs.csv")
+cfg = pd.read_csv("../01-gen-rk-data/rk_configs.csv")
 
 num_runs = len(cfg)
 group_idx = 0
 
-multipliers = cfg["sweep"].astype(int).values
+multipliers = cfg["multiplier"].astype(int).values
 rk_dt = cfg["dt_s"].values
 
 group_idx = 0
@@ -21,7 +25,7 @@ for base_k in range(1, num_runs + 1, 13):
     group_dir = os.path.join("outputs", group_name)
     os.makedirs(group_dir, exist_ok=True)
 
-    base_path = f"./RK1/r{base_k:02d}/log-buff-v.npy"
+    base_path = f"../02-run-rk/RK1/r{base_k:02d}/log-buff-v.npy"
 
     if not os.path.exists(base_path):
         print(f"Skipping missing base file: {base_path}")
@@ -45,7 +49,7 @@ for base_k in range(1, num_runs + 1, 13):
         if k == base_k:
             continue
 
-        next_path = f"./RK1/r{k:02d}/log-buff-v.npy"
+        next_path = f"../02-run-rk/RK1/r{k:02d}/log-buff-v.npy"
 
         if not os.path.exists(next_path):
             print(f"Skipping missing compare file: {next_path}")
