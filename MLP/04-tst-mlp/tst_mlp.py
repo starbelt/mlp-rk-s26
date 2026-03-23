@@ -206,7 +206,7 @@ if len(npy_files) == 0:
 
 summary_rows = []
 
-for npy_name in npy_files[:2]:
+for npy_name in npy_files:
     config_id = os.path.splitext(npy_name)[0]
 
     mse_norm, rmse_volts, time_per_prediction, total_predictions = evaluate_one_file(

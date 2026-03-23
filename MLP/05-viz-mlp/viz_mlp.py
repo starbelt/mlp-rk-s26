@@ -126,7 +126,10 @@ for npy in npys:
 
   inputs_norm = (inputs - t_mean) / t_std
 
-  arr = np.load(f"../03-split-data/tst/{npy}")
+  arr_tst = np.load(f"../03-split-data/tst/{npy}")
+  arr_val = np.load(f"../03-split-data/val/{npy}")
+  arr = np.concatenate((arr_tst,arr_val),axis=0) # Combines validation and testing data into one array
+  #print(len(arr))
 
   time_tst = arr[:, 0]
   #voltage_trn = arr[:, 1]

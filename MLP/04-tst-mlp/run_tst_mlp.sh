@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # -------- USER SETTINGS --------
-NUM=0064
+NUM=1024
 MLP_ROOT="../mlp-cfg/mlp-$NUM"
 DATA_DIR="../03-split-data"
 OUT_ROOT="./mlp-$NUM-results"
