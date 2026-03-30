@@ -21,6 +21,7 @@ import torch                    # PyTorch
 import torch.nn as nn           # Sequential, Linear, ReLU
 import math as math
 import pandas as pd            # pandas
+from tqdm import tqdm              # tqdm
 
 
 # "constants"
@@ -109,7 +110,7 @@ os.makedirs(dst, exist_ok=True)
 print(f"Saving data to: {dst}")
 
 # load data and write plot PNGs
-for npy in npys:
+for npy in tqdm(npys):
   cap_id = npy[:-4]
   data_cfg = np.array([
     npy_to_cfg_dict[cap_id]['surface area'],
@@ -155,7 +156,7 @@ for npy in npys:
   mae = np.mean(np.abs(pred_np - true_np))
   max_err = np.max(np.abs(pred_np - true_np))
 
-  print(f"{cap_id}: RMSE={rmse:.6f}, MAE={mae:.6f}, MaxErr={max_err:.6f}")
+  #print(f"{cap_id}: RMSE={rmse:.6f}, MAE={mae:.6f}, MaxErr={max_err:.6f}")
 
   df = pd.DataFrame({
     "time_s": time_pred,

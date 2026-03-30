@@ -15,7 +15,7 @@ for _, row in data.iterrows():
     base_dt = float(row["dt_s"])
     c = (1 / base_dt)
 
-    multipliers = np.linspace(1, c, 13, dtype=int)
+    multipliers = np.linspace(1, c, 13)
 
     for i, k in enumerate(multipliers):
         new_row = row.copy()

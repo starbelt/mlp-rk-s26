@@ -56,8 +56,26 @@ def parse_row(r):
     )
 
 
-# ---------------- RK1 timing-only simulation ----------------
-def run_rk1_timing_only(params):
+# ---------------- RK4 helpers ----------------
+def compute_charge_rate_at_point(q_c, i1_a, p_mode_w, c_f, esr_ohm):
+    disc = calc_node_discr(q_c, c_f, i1_a, esr_ohm, p_mode_w)
+
+    p_used = p_mode_w
+    if disc < 0.0:
+        p_used = 0.0
+        disc = calc_node_discr(q_c, c_f, i1_a, esr_ohm, p_used)
+
+    node_v = calc_node_voltage(disc, q_c, c_f, i1_a, esr_ohm)
+
+    i3 = 0.0
+    if node_v > 0.0 and p_used > 0.0:
+        i3 = p_used / node_v
+
+    return i1_a - i3
+
+
+# ---------------- Simulation (timing-only RK4) ----------------
+def run_rk4_timing_only(params):
     sa_m2 = params["sa_m2"]
     eff = params["eff"]
     vmp = params["vmp"]
@@ -70,41 +88,35 @@ def run_rk1_timing_only(params):
     dt_s = params["dt_s"]
     dur_s = params["dur_s"]
 
-    # ---- initial conditions ----
     t_s = 0.0
-    imp_a = calc_solar_current(IRR_W_P_M2, sa_m2, eff, vmp)
-    i1_a = imp_a
+    i1_a = calc_solar_current(IRR_W_P_M2, sa_m2, eff, vmp)
+
     qt_c = q0_c
-    p_mode_w = 0.0  # OFF initially
+    p_mode_w = 0.0
 
-    # initial discriminant / voltage
-    node_discr = calc_node_discr(qt_c, c_f, i1_a, esr_ohm, p_mode_w)
-    if node_discr < 0.0:
+    disc = calc_node_discr(qt_c, c_f, i1_a, esr_ohm, p_mode_w)
+    if disc < 0.0:
         p_mode_w = 0.0
-        node_discr = calc_node_discr(qt_c, c_f, i1_a, esr_ohm, p_mode_w)
-    node_v = calc_node_voltage(node_discr, qt_c, c_f, i1_a, esr_ohm)
+        disc = calc_node_discr(qt_c, c_f, i1_a, esr_ohm, p_mode_w)
+    node_v = calc_node_voltage(disc, qt_c, c_f, i1_a, esr_ohm)
 
-    # Solar array cannot push current above Vmp
     if vmp <= node_v and i1_a > 0.0:
         i1_a = 0.0
-        node_discr = calc_node_discr(qt_c, c_f, i1_a, esr_ohm, p_mode_w)
-        if node_discr < 0.0:
+        disc = calc_node_discr(qt_c, c_f, i1_a, esr_ohm, p_mode_w)
+        if disc < 0.0:
             p_mode_w = 0.0
-            node_discr = calc_node_discr(qt_c, c_f, i1_a, esr_ohm, p_mode_w)
-        node_v = calc_node_voltage(node_discr, qt_c, c_f, i1_a, esr_ohm)
+            disc = calc_node_discr(qt_c, c_f, i1_a, esr_ohm, p_mode_w)
+        node_v = calc_node_voltage(disc, qt_c, c_f, i1_a, esr_ohm)
 
-    # Load cannot operate below Vlo
     if node_v <= vlo and p_mode_w != 0.0:
         p_mode_w = 0.0
-        node_discr = calc_node_discr(qt_c, c_f, i1_a, esr_ohm, p_mode_w)
-        node_v = calc_node_voltage(node_discr, qt_c, c_f, i1_a, esr_ohm)
+        disc = calc_node_discr(qt_c, c_f, i1_a, esr_ohm, p_mode_w)
+        node_v = calc_node_voltage(disc, qt_c, c_f, i1_a, esr_ohm)
 
-    # Timing instrumentation
     time_on_accum = 0.0
     t_start = time.perf_counter()
     n_steps = 0
 
-    # ---- Simulation loop: Euler method (RK1) ----
     while t_s < dur_s:
         t_old_s = t_s
         t_s += dt_s
@@ -113,30 +125,39 @@ def run_rk1_timing_only(params):
         q_old_c = qt_c
         node_v_old = node_v
         p_old_w = p_mode_w
+
         i1_fixed = i1_a
 
-        # Calculate load current
-        i3_a = 0.0
+        i3_k1 = 0.0
         if node_v > 0.0 and p_mode_w > 0.0:
-            i3_a = p_mode_w / node_v
+            i3_k1 = p_mode_w / node_v
+        k1 = i1_fixed - i3_k1
+        q1 = qt_c + 0.5 * dt_s * k1
 
-        # Update energy buffer charge
-        qt_c += (i1_a - i3_a) * dt_s
+        k2 = compute_charge_rate_at_point(q1, i1_fixed, p_mode_w, c_f, esr_ohm)
+        q2 = qt_c + 0.5 * dt_s * k2
+
+        k3 = compute_charge_rate_at_point(q2, i1_fixed, p_mode_w, c_f, esr_ohm)
+        q3 = qt_c + dt_s * k3
+
+        k4 = compute_charge_rate_at_point(q3, i1_fixed, p_mode_w, c_f, esr_ohm)
+
+        s = k1 + 2.0 * k2 + 2.0 * k3 + k4
+        qt_c = qt_c + (dt_s * s) / 6.0
+
         if qt_c < 0.0:
             qt_c = 0.0
         q_tent_c = qt_c
 
-        # Step 1: Update solar array current
         i1_a = calc_solar_current(IRR_W_P_M2, sa_m2, eff, vmp)
+        i1_fixed = i1_a
 
-        # Step 2: disc + node_v
-        node_discr = calc_node_discr(qt_c, c_f, i1_a, esr_ohm, p_mode_w)
-        if node_discr < 0.0:
+        disc = calc_node_discr(qt_c, c_f, i1_fixed, esr_ohm, p_mode_w)
+        if disc < 0.0:
             p_mode_w = 0.0
-            node_discr = calc_node_discr(qt_c, c_f, i1_a, esr_ohm, p_mode_w)
-        node_v = calc_node_voltage(node_discr, qt_c, c_f, i1_a, esr_ohm)
+            disc = calc_node_discr(qt_c, c_f, i1_a, esr_ohm, p_mode_w)
+        node_v = calc_node_voltage(disc, qt_c, c_f, i1_a, esr_ohm)
 
-        # Step 3: Vmp clamp
         if vmp <= node_v and i1_a > 0.0:
             i1_a = 0.0
             disc = calc_node_discr(qt_c, c_f, i1_a, esr_ohm, p_mode_w)
@@ -145,20 +166,22 @@ def run_rk1_timing_only(params):
                 disc = calc_node_discr(qt_c, c_f, i1_a, esr_ohm, p_mode_w)
             node_v = calc_node_voltage(disc, qt_c, c_f, i1_a, esr_ohm)
 
-        # Step 4a: if VLO crossed inside this step, switch OFF at crossing
         vlo_on_fraction = 1.0
         crossed_vlo = (
             p_old_w > 0.0 and
             node_v_old > vlo and
             node_v <= vlo
         )
+
         if crossed_vlo:
             q_cross_c = max(calc_charge_at_voltage(vlo, c_f, i1_fixed, esr_ohm, p_old_w), 0.0)
             denom_c = q_tent_c - q_old_c
+
             if abs(denom_c) > 1e-18:
                 lam = (q_cross_c - q_old_c) / denom_c
             else:
                 lam = 1.0
+
             lam = max(0.0, min(1.0, lam))
             dt_rem_s = (1.0 - lam) * dt_s
 
@@ -169,24 +192,24 @@ def run_rk1_timing_only(params):
             node_v = calc_node_voltage(disc, qt_c, c_f, i1_fixed, esr_ohm)
             vlo_on_fraction = lam
 
-        # Step 4b: VHI / VLO checks
         if p_mode_w == 0.0 and node_v >= vhi:
             p_mode_w = p_on_w
         if node_v <= vlo and p_mode_w != 0.0:
             p_mode_w = 0.0
 
-        # duty
         if p_old_w > 0.0:
             time_on_accum += dt_s * vlo_on_fraction
 
     exec_time_total_s = time.perf_counter() - t_start
     exec_time_per_step_s = exec_time_total_s / max(n_steps, 1)
+
     duty_cycle_percent = 100.0 * time_on_accum / max(dur_s, 1e-18)
     duty_cycle_percent = float(max(0.0, min(100.0, duty_cycle_percent)))
 
     return exec_time_total_s, exec_time_per_step_s, n_steps, duty_cycle_percent
 
 
+# ---------------- Summary CSV ----------------
 def append_summary_csv(path, row):
     out_dir = os.path.dirname(path)
     if out_dir:
@@ -214,6 +237,7 @@ def append_summary_csv(path, row):
         writer.writerow(row)
 
 
+# ---------------- Main ----------------
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", type=str, required=True)
@@ -236,7 +260,7 @@ def main():
     duty_cycles = []
 
     for _ in range(args.num_runs):
-        total_s, per_step_s, n_steps, duty_pct = run_rk1_timing_only(params)
+        total_s, per_step_s, n_steps, duty_pct = run_rk4_timing_only(params)
         total_times.append(total_s)
         step_times.append(per_step_s)
         duty_cycles.append(duty_pct)
@@ -261,10 +285,10 @@ def main():
     ])
 
     #print(
-        #f"[RK1 row {args.row_idx}] "
-        #f"avg_total={avg_total:.6e} s, "
-        #f"avg_step={avg_step:.6e} s, "
-        #f"steps={n_steps}, "
+     #   f"[RK4 row {args.row_idx}] "
+      #  f"avg_total={avg_total:.6e} s, "
+       # f"avg_step={avg_step:.6e} s, "
+       # f"steps={n_steps}, "
         #f"avg_duty={avg_duty:.3f}%"
     #)
 

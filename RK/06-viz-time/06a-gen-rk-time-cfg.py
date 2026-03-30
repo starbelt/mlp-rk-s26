@@ -1,7 +1,7 @@
 import pandas as pd
 
 INPUT_CSV  = "../01-gen-rk-data/rk_configs.csv"
-OUTPUT_CSV = "./rk_configs_execution_test.csv"
+OUTPUT_CSV = "./rk_configs_execution.csv"
 
 df = pd.read_csv(INPUT_CSV)
 
