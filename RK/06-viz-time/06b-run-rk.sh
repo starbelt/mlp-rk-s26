@@ -5,6 +5,7 @@ file="./rk_configs_execution.csv"
 out_file="results/RK${rk_num}_timing_results.csv"
 
 rm -f "$out_file"
+echo "$rk_num"
 
 # number of rows excluding header
 num_rows=$(( $(wc -l < "$file") - 1 ))

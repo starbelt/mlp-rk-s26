@@ -278,7 +278,7 @@ for npy_name in npy_files:
         time_list.append(time_per_prediction)
 
     # ====================================================
-    # Compute statistics (ADD IT HERE 👇)
+    # Compute statistics 
     # ====================================================
 
     avg_mse  = np.mean(mse_list)

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-NODES=0256
-LAYERS=5
+NODES=0032
+LAYERS=2
 ROOT="../../MLP/mlp-cfg/mlp-$NODES/mlp-$NODES-$LAYERS/mlp-$NODES-$LAYERS"
 
 python3 viz_mlp.py \

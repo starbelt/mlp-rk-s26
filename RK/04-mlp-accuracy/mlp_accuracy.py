@@ -111,59 +111,70 @@ print(f"Saving data to: {dst}")
 
 # load data and write plot PNGs
 for npy in tqdm(npys):
-  cap_id = npy[:-4]
-  data_cfg = np.array([
-    npy_to_cfg_dict[cap_id]['surface area'],
-    npy_to_cfg_dict[cap_id]['efficiency'],
-    npy_to_cfg_dict[cap_id]['max power voltage'],
-    npy_to_cfg_dict[cap_id]['capacitance'],
-    npy_to_cfg_dict[cap_id]['equivalent series resistance'],
-    npy_to_cfg_dict[cap_id]['initial charge'],
-    npy_to_cfg_dict[cap_id]['power'],
-    npy_to_cfg_dict[cap_id]['high voltage'],
-    npy_to_cfg_dict[cap_id]['low voltage'],
-  ])
-  nparr = np.load(os.path.join(src,npy))
-  inputs = torch.tensor(np.column_stack((\
-   np.repeat([data_cfg],repeats=nparr.shape[0],axis=0),nparr[:,0]\
-  )),dtype=torch.float32)
+    cap_id = npy[:-4]
+    data_cfg = np.array([
+        npy_to_cfg_dict[cap_id]['surface area'],
+        npy_to_cfg_dict[cap_id]['efficiency'],
+        npy_to_cfg_dict[cap_id]['max power voltage'],
+        npy_to_cfg_dict[cap_id]['capacitance'],
+        npy_to_cfg_dict[cap_id]['equivalent series resistance'],
+        npy_to_cfg_dict[cap_id]['initial charge'],
+        npy_to_cfg_dict[cap_id]['power'],
+        npy_to_cfg_dict[cap_id]['high voltage'],
+        npy_to_cfg_dict[cap_id]['low voltage'],
+    ])
 
-  inputs_norm = (inputs - t_mean) / t_std
+    nparr = np.load(os.path.join(src, npy))
+    inputs = torch.tensor(
+        np.column_stack((
+            np.repeat([data_cfg], repeats=nparr.shape[0], axis=0),
+            nparr[:, 0]
+        )),
+        dtype=torch.float32
+    )
 
-  arr = np.load(f"../../MLP/03-split-data/tst/{npy}")
+    inputs_norm = (inputs - t_mean) / t_std
 
-  time_tst = arr[:, 0]
-  #voltage_trn = arr[:, 1]
+    # load validation and test split files
+    val_arr = np.load(f"../../MLP/03-split-data/val/{npy}")
+    tst_arr = np.load(f"../../MLP/03-split-data/tst/{npy}")
 
-  # Test section: Not in original code
+    time_val = val_arr[:, 0]
+    time_tst = tst_arr[:, 0]
 
-  with torch.no_grad():
-    pred_norm = mlp(inputs_norm)
+    # combine unseen times
+    holdout_times = np.concatenate((time_val, time_tst))
 
-  pred_volts = pred_norm * v_std + v_mean
-  pred_np = pred_volts.cpu().numpy().squeeze()   # (N,)
-  true_np = nparr[:, 1]                        # (N,)
+    with torch.no_grad():
+        pred_norm = mlp(inputs_norm)
 
-  time_pred = nparr[:, 0]
-  is_training_time = np.isin(time_pred, time_tst)
+    pred_volts = pred_norm * v_std + v_mean
+    pred_np = pred_volts.cpu().numpy().squeeze()
+    true_np = nparr[:, 1]
+    time_pred = nparr[:, 0]
 
-  err = pred_np - true_np          # signed error
-  abs_err = np.abs(err)            # magnitude
-  sq_err = err**2  
+    # keep only validation + test rows
+    is_holdout = np.isin(time_pred, holdout_times)
 
-  mse = np.mean((pred_np - true_np) ** 2)
-  rmse = math.sqrt(mse)
-  mae = np.mean(np.abs(pred_np - true_np))
-  max_err = np.max(np.abs(pred_np - true_np))
+    err = pred_np - true_np
+    abs_err = np.abs(err)
+    sq_err = err ** 2
 
-  #print(f"{cap_id}: RMSE={rmse:.6f}, MAE={mae:.6f}, MaxErr={max_err:.6f}")
+    # metrics only on combined validation + test data
+    holdout_err = err[is_holdout]
+    holdout_abs_err = abs_err[is_holdout]
 
-  df = pd.DataFrame({
-    "time_s": time_pred,
-    "abs_err": abs_err
-  })
+    mse = np.mean(holdout_err ** 2)
+    rmse = math.sqrt(mse)
+    mae = np.mean(holdout_abs_err)
+    max_err = np.max(holdout_abs_err)
 
-  np.save(os.path.join(dst, f"{cap_id}_error.npy"), df[["time_s", "abs_err"]].to_numpy())
+    df = pd.DataFrame({
+        "time_s": time_pred[is_holdout],
+        "abs_err": abs_err[is_holdout]
+    })
+
+    np.save(os.path.join(dst, f"{cap_id}_error.npy"), df[["time_s", "abs_err"]].to_numpy())
 
 
 

@@ -40,7 +40,6 @@ plt.figure(figsize=(8, 5))
 x = np.linspace(min(times), max(times), 100)
 y = norm.pdf(x, mean, std)
 
-
 # histogram
 plt.hist(times, bins=30, density=True, alpha=0.6, label="Data")
 

@@ -16,9 +16,11 @@
 
 import os, csv, math, time, argparse
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
 IRR_W_P_M2 = 1366.1
-PLOT_DOWNSAMPLE = 15
+PLOT_DOWNSAMPLE = 1 # downsample factor for visualization (1 = no downsampling)
 
 
 def calc_solar_current(irr_w_m2, sa_m2, eff, vmp):
@@ -241,6 +243,7 @@ def run_rk2(params, timing_only: bool = False):
             if node_v <= vlo:
                 p_mode_w = 0.0
                 log_states.append([t_s, "VLO"])
+                break
 
         # duty
         op["comp"] += 1
@@ -301,35 +304,31 @@ def plot_csvs_to_pdf(csv_paths, out_pdf, param_text=None, downsample=PLOT_DOWNSA
 
 
 # ---------------- Write outputs ----------------
-def write_outputs(out_dir, log_node_v, log_buff_v, log_states, meta, params):
+def write_outputs(out_dir, log_node_v, log_buff_v, log_states, meta_dict, params):
     os.makedirs(out_dir, exist_ok=True)
 
-    node_csv = os.path.join(out_dir, "log-node-v.csv")
-    buff_csv = os.path.join(out_dir, "log-buff-v.csv")
+    node_npy = os.path.join(out_dir, "log-node-v.npy")
+    buff_npy = os.path.join(out_dir, "log-buff-v.npy")
+    states_npy = os.path.join(out_dir, "log-states.npy")
+    meta_npy = os.path.join(out_dir, "meta.npy")
 
-    with open(node_csv, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["t_s", "Node Voltage (V)"])
-        for t, v in log_node_v:
-            w.writerow([f"{t:.9f}", f"{v:.9f}"])
+    np.save(node_npy, np.asarray(log_node_v, dtype=np.float64))
+    np.save(buff_npy, np.asarray(log_buff_v, dtype=np.float64))
 
-    with open(buff_csv, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["t_s", "Buffer Voltage (V)"])
-        for t, v in log_buff_v:
-            w.writerow([f"{t:.9f}", f"{v:.9f}"])
+    states_arr = np.array(
+        [(float(t), str(s)) for t, s in log_states],
+        dtype=[("t_s", "f8"), ("state", "U32")]
+    )
+    np.save(states_npy, states_arr)
 
-    with open(os.path.join(out_dir, "log-states.csv"), "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["t_s", "state"])
-        for t, s in log_states:
-            w.writerow([f"{t:.9f}", s])
+    np.save(meta_npy, meta_dict)
 
-    with open(os.path.join(out_dir, "meta.csv"), "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["key","value"])
-        for k, v in meta.items():
-            w.writerow([k, v])
+    dn = max(int(PLOT_DOWNSAMPLE), 1)
+    node_ds = log_node_v[::dn]
+    buff_ds = log_buff_v[::dn]
+    t_plot = [e[0] for e in node_ds]
+    node_v = [e[1] for e in node_ds]
+    buff_v = [e[1] for e in buff_ds]
 
     param_text = (
         f"sa_m2={params['sa_m2']:.4g}, eff={params['eff']:.3g}, vmp={params['vmp']:.3g}, "
@@ -338,12 +337,18 @@ def write_outputs(out_dir, log_node_v, log_buff_v, log_states, meta, params):
         f"dt_s={params['dt_s']:.3g}, dur_s={params['dur_s']:.3g}"
     )
 
-    plot_csvs_to_pdf(
-        [node_csv, buff_csv],
-        os.path.join(out_dir, "voltages_rk2.pdf"),
-        param_text=param_text,
-        downsample=PLOT_DOWNSAMPLE
-    )
+    fig, ax = plt.subplots(figsize=(8.5, 4.0))
+    fig.suptitle(param_text, fontsize=9, y=0.98)
+    ax.plot(t_plot, node_v, marker=".", linestyle="None", markersize=2, label="Node Voltage (V)")
+    ax.plot(t_plot, buff_v, marker=".", linestyle="None", markersize=2, label="Buffer Voltage (V)")
+    ax.set_xlabel("Simulation Time (s)")
+    ax.set_ylabel("Voltage (V)")
+    ax.set_title("Energy System Voltages (RK1)")
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.savefig(os.path.join(out_dir, "voltages_rk2.pdf"), format="pdf")
+    plt.close()
 
 
 def main():

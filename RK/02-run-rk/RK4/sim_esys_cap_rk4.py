@@ -279,6 +279,7 @@ def run_rk4(params, timing_only: bool = False):
             if node_v <= vlo:
                 p_mode_w = 0.0
                 log_states.append([t_s, "VLO"])
+                break
 
         # duty
         op["comp"] += 1

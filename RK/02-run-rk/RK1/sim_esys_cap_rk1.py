@@ -184,6 +184,10 @@ def run_rk1(params, timing_only: bool = False):
                 p_mode_w = 0.0
                 log_states.append([t_s, "VLO"])
 
+                # STOP simulation when VLO is reached
+
+                break
+
         # duty
         if p_mode_w > 0.0:
             time_on_accum += dt_s
